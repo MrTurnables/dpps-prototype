@@ -1,0 +1,7 @@
+invoice_number,vendor_id,amount,invoice_date,notes
+INV-EDGE-01,V-GLOBEX,4320.50,2024-01-18,"Date Proximity Edge (8 days diff - should fail proximity check default 7 days)"
+INV-EDGE-02,V-GLOBEX,4320.50,2024-01-17,"Date Proximity Edge (7 days diff - should pass proximity)"
+INV-EDGE-03,V-ACME,12562.00,2023-12-15,"Fuzzy Amount Edge (0.49% diff from 12500 - should pass fuzzy amount)"
+INV-EDGE-04,V-ACME,12563.00,2023-12-15,"Fuzzy Amount Edge (0.504% diff from 12500 - should fail fuzzy amount)"
+INV-EDGE-05,V-ACME,15200.00,2023-12-15,"Transposed Amount Digits (12500 vs 15200)"
+INV-2023-OOI,V-ACME,12500.00,2023-12-15,"Double Typos (001 -> OOI)"

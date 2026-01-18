@@ -1,0 +1,6 @@
+invoice_number,vendor_id,amount,invoice_date,notes
+INV-MIX-01,V-ACME,12500.00,2024-02-28,"Exact Amount Matches Seeded Inv1 (Cross Month)"
+INV-MIX-02,V-UNKNOWN,12500.00,2024-01-20,"Unknown Vendor but Exact Amount (Should check amount signal only)"
+GLBX-992-RE,V-GLOBEX,4320.50,2024-01-12,"Re-submitted invoice (Same Amount, Proximity Date, Pattern Match)"
+INV-SMALL-DIFF,V-SOYLENT,500.01,2024-03-05,"Micro Difference"
+INV-SMALL-DIFF,V-SOYLENT,500.00,2024-03-05,"Micro Difference Base (Self-duplicate check)"
