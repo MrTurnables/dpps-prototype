@@ -25,10 +25,37 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
+
+const daysInMonth = Array.from({ length: 31 }, (_, i) => (i + 1).toString().padStart(2, '0'));
+const currentYear = new Date().getFullYear();
+const years = Array.from({ length: 56 }, (_, i) => (currentYear - 5 + i).toString());
+const months = [
+  { value: "01", label: "Jan" }, { value: "02", label: "Feb" }, { value: "03", label: "Mar" },
+  { value: "04", label: "Apr" }, { value: "05", label: "May" }, { value: "06", label: "Jun" },
+  { value: "07", label: "Jul" }, { value: "08", label: "Aug" }, { value: "09", label: "Sep" },
+  { value: "10", label: "Oct" }, { value: "11", label: "Nov" }, { value: "12", label: "Dec" },
+];
+
+const DayGridSelector = ({ value, onChange }: { value: string, onChange: (v: string) => void }) => (
+  <div className="grid grid-cols-7 gap-1 p-2 w-[220px]">
+    {daysInMonth.map((day) => (
+      <Button
+        key={day}
+        variant="ghost"
+        size="sm"
+        className={cn(
+          "h-7 w-7 p-0 text-[10px] font-medium",
+          value === day && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
+        )}
+        onClick={() => onChange(day)}
+      >
+        {parseInt(day)}
+      </Button>
+    ))}
+  </div>
+);
 
 export default function Dashboard() {
   const [selectedRange, setSelectedRange] = useState({
@@ -47,7 +74,7 @@ export default function Dashboard() {
   // Fetch dashboard metrics from API
   const { data: metricsData, isLoading: isLoadingMetrics } = useQuery({
     queryKey: ["/api/dashboard/metrics"],
-    refetchInterval: 30000, // Refetch every 30 seconds for live updates
+    refetchInterval: 30000,
   });
 
   // Fetch vendors for ranking
@@ -55,10 +82,18 @@ export default function Dashboard() {
     queryKey: ["/api/vendors"],
   });
 
+  interface Metrics {
+    totalSavings?: number;
+    activeCases?: number;
+    duplicatesDetected?: number;
+  }
+
+  const mData = metricsData as Metrics | undefined;
+
   const metrics = {
-    preventedValue: (metricsData as any)?.totalSavings || 0,
-    openCases: (metricsData as any)?.activeCases || 0,
-    totalDetections: (metricsData as any)?.duplicatesDetected || 0,
+    preventedValue: mData?.totalSavings || 0,
+    openCases: mData?.activeCases || 0,
+    totalDetections: mData?.duplicatesDetected || 0,
     efficiency: 85,
     totalProcessed: 5250000
   };
@@ -84,35 +119,14 @@ export default function Dashboard() {
     setHeatmapData(data);
   }, []);
 
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 56 }, (_, i) => (currentYear - 5 + i).toString());
-  const months = [
-    { value: "01", label: "Jan" }, { value: "02", label: "Feb" }, { value: "03", label: "Mar" },
-    { value: "04", label: "Apr" }, { value: "05", label: "May" }, { value: "06", label: "Jun" },
-    { value: "07", label: "Jul" }, { value: "08", label: "Aug" }, { value: "09", label: "Sep" },
-    { value: "10", label: "Oct" }, { value: "11", label: "Nov" }, { value: "12", label: "Dec" },
-  ];
+  // Generate heatmap data client-side only to avoid hydration mismatch
+  const [heatmapData, setHeatmapData] = useState<number[]>([]);
 
-  const daysInMonth = Array.from({ length: 31 }, (_, i) => (i + 1).toString().padStart(2, '0'));
-
-  const DayGridSelector = ({ value, onChange }: { value: string, onChange: (v: string) => void }) => (
-    <div className="grid grid-cols-7 gap-1 p-2 w-[220px]">
-      {daysInMonth.map((day) => (
-        <Button
-          key={day}
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "h-7 w-7 p-0 text-[10px] font-medium",
-            value === day && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
-          )}
-          onClick={() => onChange(day)}
-        >
-          {parseInt(day)}
-        </Button>
-      ))}
-    </div>
-  );
+  useEffect(() => {
+    // Generate random risk values only on client
+    const data = Array.from({ length: 48 }, () => Math.random());
+    setHeatmapData(data);
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -363,7 +377,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {(Array.isArray(vendorsData) ? vendorsData : mockVendorRanking).slice(0, 10).map((vendor: any, i: number) => (
+              {(Array.isArray(vendorsData) ? vendorsData : mockVendorRanking).slice(0, 10).map((vendor, i) => (
                 <div key={vendor.name || vendor.id} className="flex items-center justify-between">
                   <div className="flex items-center space-x-3 overflow-hidden">
                     <span className="text-xs font-mono text-muted-foreground w-4">{i + 1}</span>

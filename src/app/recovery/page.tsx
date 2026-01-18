@@ -1,6 +1,5 @@
 'use client';
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -10,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Mail, Loader2, CheckCircle, Send, FileText, History, RefreshCw, AlertCircle } from "lucide-react";
+import { Download, Mail, Loader2, Send, History, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -285,7 +284,7 @@ function ActivityLog({ id }: { id: string }) {
 }
 
 function EmailForm({ item }: { item: RecoveryItem }) {
-  const [isOpen, setIsOpen] = useState(false);
+  // isOpen removed
 
   return (
     <>

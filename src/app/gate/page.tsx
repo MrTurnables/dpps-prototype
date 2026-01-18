@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, ShieldAlert, CheckCircle, FileText, AlertTriangle, Search, Info, Download, BrainCircuit, Sparkles, Zap, MessageSquare, X, Send, User, Bot, Loader2 } from "lucide-react";
+import { Upload, ShieldAlert, CheckCircle, FileText, AlertTriangle, Search, Info, Download, BrainCircuit, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useRef, type ChangeEvent, useEffect } from "react";
 import { Progress } from "@/components/ui/progress";
@@ -77,7 +77,7 @@ export default function PaymentGate() {
       if (saved) {
         try {
           return JSON.parse(saved).validationResult;
-        } catch (e) { return null; }
+        } catch { return null; }
       }
     }
     return null;
@@ -87,7 +87,7 @@ export default function PaymentGate() {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        try { return JSON.parse(saved).fileName; } catch (e) { return null; }
+        try { return JSON.parse(saved).fileName; } catch { return null; }
       }
     }
     return null;
@@ -251,14 +251,7 @@ export default function PaymentGate() {
     }, 500);
   };
 
-  const getRiskColor = (level: string) => {
-    switch (level?.toLowerCase()) {
-      case 'critical': return "text-destructive";
-      case 'high': return "text-orange-600";
-      case 'medium': return "text-yellow-600";
-      default: return "text-emerald-600";
-    }
-  };
+  // getRiskColor removed
 
   const getScoreColor = (score: number) => {
     if (score >= 85) return "text-destructive";

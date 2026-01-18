@@ -1,5 +1,5 @@
 import { Case, Invoice, KPIMetrics } from "./types";
-import { addDays, subDays, format } from "date-fns";
+import { subDays, format } from "date-fns";
 
 const generateId = () => Math.random().toString(36).substring(2, 9).toUpperCase();
 
@@ -58,7 +58,7 @@ export const mockVendorRanking = [
 
 export const mockCases: Case[] = Array.from({ length: 15 }).map((_, i) => {
   const primaryInvoice = createMockInvoice({ status: "Held" });
-  
+
   // Simulate a duplicate
   const duplicateInvoice = {
     ...primaryInvoice,
@@ -70,7 +70,7 @@ export const mockCases: Case[] = Array.from({ length: 15 }).map((_, i) => {
   };
 
   const score = Math.floor(Math.random() * (100 - 60) + 60);
-  
+
   return {
     id: `CASE-${2024000 + i}`,
     type: "PREPAY",

@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
-import { Search, Filter, ArrowRight, CheckSquare, XCircle, MoreHorizontal, AlertCircle } from "lucide-react";
+import { Search, Filter, ArrowRight, AlertCircle, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,12 +34,10 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { Separator } from "@/components/ui/separator";
 import { BrainCircuit, LineChart, History, Building2 } from "lucide-react";
 
 export default function PrePayCockpit() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [activeCase, setActiveCase] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, string>>({});
   const [filterType, setFilterType] = useState<string>("All");
 
@@ -48,7 +46,20 @@ export default function PrePayCockpit() {
     queryKey: ["/api/cases", { status: "open" }],
   });
 
-  const cases = Array.isArray(casesData) ? casesData : mockCases;
+  interface Case {
+    id: string;
+    primaryInvoice: {
+      vendorName: string;
+      vendorId: string;
+      invoiceNumber: string;
+      currency: string;
+      amount: number;
+    };
+    riskScore: number;
+    status: string;
+  }
+
+  const cases = (Array.isArray(casesData) ? casesData : mockCases) as Case[];
 
   const duplicateTypes = [
     { label: "Exact Match", count: 12, color: "bg-blue-500" },
@@ -61,7 +72,7 @@ export default function PrePayCockpit() {
     if (selectedIds.length === cases.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(cases.map((c: any) => c.id));
+      setSelectedIds(cases.map((c) => c.id));
     }
   };
 
@@ -70,6 +81,10 @@ export default function PrePayCockpit() {
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
+  // ... (middle parts handled by context or kept separate?) 
+  // Actually I need to be careful not to skip too much or replace wrong blocks. 
+  // I will verify lines first.
+
 
   const handleBulkAction = (action: 'duplicate' | 'dismiss') => {
     if (selectedIds.length === 0) {
@@ -288,7 +303,7 @@ export default function PrePayCockpit() {
                                 </div>
                                 <div>
                                   <p className="text-sm font-bold text-foreground">Fuzzy Vendor Name Match</p>
-                                  <p className="text-xs text-muted-foreground">"Acme Corp" vs "Acme Corporation Inc." (Levenshtein Distance: 2)</p>
+                                  <p className="text-xs text-muted-foreground">&quot;Acme Corp&quot; vs &quot;Acme Corporation Inc.&quot; (Levenshtein Distance: 2)</p>
                                 </div>
                               </div>
                               <div className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors">

@@ -9,13 +9,11 @@ import {
   CartesianGrid,
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
   PieChart,
   Pie,
   Cell
 } from "recharts";
-import { ShieldCheck, ShieldAlert, TrendingUp, DollarSign, Info } from "lucide-react";
+import { ShieldCheck, ShieldAlert, TrendingUp, DollarSign } from "lucide-react";
 import {
   TooltipProvider,
   TooltipTrigger,

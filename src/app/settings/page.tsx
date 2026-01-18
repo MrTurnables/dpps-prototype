@@ -5,11 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Info, Target, Zap, Shield, AlertTriangle, CheckCircle2, RefreshCw, Save } from "lucide-react";
+import { Info, Target, Zap, Shield, AlertTriangle, RefreshCw, Save } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -111,7 +110,7 @@ export default function SettingsPage() {
         await fetchConfig();
         toast.success("Configuration reset to defaults");
       }
-    } catch (error) {
+    } catch {
       toast.error("Failed to reset configuration");
     } finally {
       setIsResetting(false);
