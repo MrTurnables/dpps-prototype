@@ -119,14 +119,7 @@ export default function Dashboard() {
     setHeatmapData(data);
   }, []);
 
-  // Generate heatmap data client-side only to avoid hydration mismatch
-  const [heatmapData, setHeatmapData] = useState<number[]>([]);
 
-  useEffect(() => {
-    // Generate random risk values only on client
-    const data = Array.from({ length: 48 }, () => Math.random());
-    setHeatmapData(data);
-  }, []);
 
   return (
     <div className="space-y-8">
