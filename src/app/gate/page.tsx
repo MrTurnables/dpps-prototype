@@ -1,10 +1,13 @@
 'use client';
 
+import * as XLSX from 'xlsx';
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, ShieldAlert, CheckCircle, FileText, AlertTriangle, Search, Info, Download, BrainCircuit, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useRef, type ChangeEvent, useEffect } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -45,6 +48,7 @@ interface DetectedDuplicate {
   riskLevel: string;
   signals: { name: string; score: number; triggered: boolean }[];
   matchedWith?: {
+    id?: string;
     invoiceNumber: string;
     invoiceDate: string;
     amount: number;
@@ -71,38 +75,45 @@ export default function PaymentGate() {
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // State for analysis results
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        try {
-          return JSON.parse(saved).validationResult;
-        } catch { return null; }
-      }
-    }
-    return null;
-  });
-
-  const [fileName, setFileName] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        try { return JSON.parse(saved).fileName; } catch { return null; }
-      }
-    }
-    return null;
-  });
+  // State for analysis results
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState("excel");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    // Load state from local storage on mount
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setValidationResult(parsed.validationResult);
+        setFileName(parsed.fileName);
+      } catch (e) {
+        console.error("Failed to load saved state", e);
+      }
+    }
+  }, []);
 
   // Persistence logic
   useEffect(() => {
-    if (validationResult || fileName) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ validationResult, fileName }));
+    if (mounted) { // Only save if mounted to avoid overwriting with initial nulls if effect runs early? 
+      // Actually, we only want to save if we have data OR if we explicitly cleared it.
+      // But if we load null initially, and then save null immediately, we wipe storage.
+      // So we should only start saving after we've loaded? 
+      // Or simpler: The previous logic saved whenever result/filename changed.
+      // If we start null, and then load from storage, it changes to loaded value.
+      // If we start null and storage is empty, it stays null.
+
+      if (validationResult || fileName) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ validationResult, fileName }));
+      }
     }
-  }, [validationResult, fileName]);
+  }, [validationResult, fileName, mounted]);
 
   const handleUpload = async (e?: ChangeEvent<HTMLInputElement>) => {
     if (isUploading) return;
@@ -130,23 +141,57 @@ export default function PaymentGate() {
       if (file) {
         try {
           const text = await file.text();
-          const rows = text.split('\n');
+          const rows = text.split(/\r?\n/);
           const parsedInvoices = [];
 
-          // Basic CSV parsing
-          for (let i = 1; i < rows.length; i++) {
-            const row = rows[i].trim();
-            if (!row) continue;
-            const cols = row.split(',');
+          if (rows.length > 1) {
+            const headers = rows[0].split(',').map(h => h.trim());
 
-            // Expecting: invoiceNumber, vendorId, amount, invoiceDate
-            if (cols.length >= 3) {
-              parsedInvoices.push({
-                invoiceNumber: cols[0]?.trim() || `INV-UNK-${i}`,
-                vendorId: cols[1]?.trim() || 'V-UNKNOWN',
-                amount: parseFloat(cols[2]?.trim()) || 0,
-                invoiceDate: cols[3]?.trim() || new Date().toISOString(),
-              });
+            // Helper to find index case-insensitively
+            const getIdx = (patterns: string[]) =>
+              headers.findIndex(h => patterns.some(p => h.toLowerCase().includes(p.toLowerCase())));
+
+            const idxInvoiceNum = getIdx(['Invoice_Reference', 'invoiceNumber', 'Reference']); // Prefer reference
+            const idxVendorId = getIdx(['Vendor_Number', 'vendorId', 'VendorID']);
+            const idxAmount = getIdx(['Invoice_Amount', 'amount', 'Total']);
+            const idxDate = getIdx(['Invoice_Date', 'date', 'DocumentDate']);
+            const idxInvoiceId = getIdx(['Invoice_ID', 'id']); // Fallback for reference if needed
+
+            // Default to 0,1,2,3 if no headers matched (simple CSV fallback)
+            const isMapped = idxAmount !== -1 && idxDate !== -1;
+
+            for (let i = 1; i < rows.length; i++) {
+              const row = rows[i].trim();
+              if (!row) continue;
+
+              // Handle comma inside quotes? Simple split for now as data seems simple
+              const cols = row.split(',');
+
+              let num, ven, amt, dt;
+
+              if (isMapped) {
+                num = cols[idxInvoiceNum !== -1 ? idxInvoiceNum : (idxInvoiceId !== -1 ? idxInvoiceId : 0)];
+                ven = cols[idxVendorId !== -1 ? idxVendorId : 1];
+                amt = cols[idxAmount];
+                dt = cols[idxDate];
+              } else {
+                // Fallback to strict index 0,1,2,3
+                if (cols.length >= 3) {
+                  num = cols[0];
+                  ven = cols[1];
+                  amt = cols[2];
+                  dt = cols[3];
+                }
+              }
+
+              if (amt && dt) {
+                parsedInvoices.push({
+                  invoiceNumber: num?.trim() || `INV-UNK-${i}`,
+                  vendorId: ven?.trim() || 'V-UNKNOWN',
+                  amount: parseFloat(amt.trim()) || 0,
+                  invoiceDate: dt.trim(),
+                });
+              }
             }
           }
 
@@ -202,23 +247,92 @@ export default function PaymentGate() {
   const executeExport = () => {
     if (!validationResult) return;
 
-    const headers = "Invoice Number,Vendor ID,Amount,Date,Score,Risk Level,Status,Matched Invoice,Matched Amount\n";
-    const rows = validationResult.duplicates.map(dup =>
-      `${dup.invoiceNumber},${dup.vendorId},${dup.amount},${dup.invoiceDate},${dup.score},${dup.riskLevel},${dup.status},${dup.matchedWith?.invoiceNumber || ''},${dup.matchedWith?.amount || ''}`
-    ).join("\n");
+    const fileName = `validation_results_${new Date().toISOString().split('T')[0]}`;
 
-    const blob = new Blob([headers + rows], { type: "text/csv" });
+    switch (exportFormat) {
+      case "excel":
+        // Generate real .xlsx file
+        const worksheet = XLSX.utils.json_to_sheet(validationResult.duplicates.map(dup => ({
+          "Invoice Number": dup.invoiceNumber,
+          "Vendor ID": dup.vendorId,
+          "Amount": dup.amount,
+          "Date": dup.invoiceDate,
+          "Score": dup.score,
+          "Risk Level": dup.riskLevel,
+          "Status": dup.status,
+          "Matched Invoice": dup.matchedWith?.invoiceNumber || '',
+          "Matched Amount": dup.matchedWith?.amount || ''
+        })));
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Validation Results");
+        XLSX.writeFile(workbook, `${fileName}.xlsx`);
+
+        setIsExportDialogOpen(false);
+        toast.success("Export Successful", {
+          description: "Report downloaded as EXCEL"
+        });
+        return; // XLSX.writeFile triggers download/save
+
+      case "json":
+        const jsonContent = JSON.stringify(validationResult.duplicates, null, 2);
+        downloadBlob(jsonContent, "application/json", "json", fileName);
+        break;
+
+      case "xml":
+      case "ubl":
+        // Basic XML generation
+        const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<ValidationReport>
+  <Summary>
+    <TotalLines>${validationResult.totalLines}</TotalLines>
+    <ApprovedLines>${validationResult.approvedLines}</ApprovedLines>
+    <DuplicatesDetected>${validationResult.duplicatesDetected}</DuplicatesDetected>
+  </Summary>
+  <Duplicates>
+    ${validationResult.duplicates.map(dup => `
+    <DetectedDuplicate>
+      <InvoiceNumber>${dup.invoiceNumber}</InvoiceNumber>
+      <VendorID>${dup.vendorId}</VendorID>
+      <Amount>${dup.amount}</Amount>
+      <Date>${dup.invoiceDate}</Date>
+      <Score>${dup.score}</Score>
+      <RiskLevel>${dup.riskLevel}</RiskLevel>
+      <Status>${dup.status}</Status>
+    </DetectedDuplicate>`).join('')}
+  </Duplicates>
+</ValidationReport>`;
+        downloadBlob(xmlContent, "application/xml", "xml", fileName);
+        break;
+
+      case "csv":
+      default:
+        // CSV with BOM for Excel compatibility (Fallback or explicit CSV)
+        const headers = "Invoice Number,Vendor ID,Amount,Date,Score,Risk Level,Status,Matched Invoice,Matched Amount\n";
+        const rows = validationResult.duplicates.map(dup => {
+          const field = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
+          return `${field(dup.invoiceNumber)},${field(dup.vendorId)},${dup.amount},${field(dup.invoiceDate)},${field(dup.score)},${field(dup.riskLevel)},${field(dup.status)},${field(dup.matchedWith?.invoiceNumber)},${field(dup.matchedWith?.amount)}`;
+        }).join("\n");
+
+        downloadBlob("\uFEFF" + headers + rows, "text/csv;charset=utf-8;", "csv", fileName);
+        break;
+    }
+
+    setIsExportDialogOpen(false);
+  };
+
+  const downloadBlob = (content: string, mimeType: string, extension: string, fileName: string) => {
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `validation_results.${exportFormat === 'csv' ? 'csv' : 'txt'}`);
+    link.setAttribute("download", `${fileName}.${extension}`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    setIsExportDialogOpen(false);
     toast.success("Export Successful", {
-      description: "Validation report downloaded."
+      description: `Report downloaded as ${extension.toUpperCase()}`
     });
   };
 
@@ -235,12 +349,52 @@ export default function PaymentGate() {
     }, 1500);
   };
 
+  const recoveryMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await fetch('/api/recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to initiate recovery');
+      return response.json();
+    }
+  });
+
   const handleHoldPayment = (uniqueKey: string) => {
+    const item = validationResult?.duplicates.find((d, idx) =>
+      `${d.invoiceNumber}-${idx}` === uniqueKey
+    );
+
+    if (!item) {
+      console.error("Item not found for key:", uniqueKey);
+      return;
+    }
+
     setProcessingId(uniqueKey);
-    setTimeout(() => {
-      toast.success("Payment Held", { description: "Item moved to manual review queue" });
-      setProcessingId(null);
-    }, 500);
+
+    recoveryMutation.mutate({
+      invoiceId: null, // Explicitly null to trigger new invoice creation
+      invoiceNumber: item.invoiceNumber,
+      invoiceDate: item.invoiceDate,
+      vendorId: item.vendorId,
+      amount: item.amount,
+      notes: `Held via Payment Gate. Risk Score: ${item.score}. Reason: Duplicate detected with ${item.matchedWith?.invoiceNumber || 'existing records'}.`,
+      recoveryMethod: 'hold'
+    }, {
+      onSuccess: () => {
+        toast.success("Payment Held", {
+          description: "Item moved to manual review and recovery queue"
+        });
+        setProcessingId(null);
+      },
+      onError: () => {
+        toast.error("Failed to process hold", {
+          description: "There was an error creating the recovery case."
+        });
+        setProcessingId(null);
+      }
+    });
   };
 
   const handleDismissWarning = (uniqueKey: string) => {
@@ -512,7 +666,7 @@ export default function PaymentGate() {
                                         <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-tighter">Existing Record</span>
                                       </div>
                                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                        <span>Date: <span className="text-foreground font-medium">{new Date(dup.matchedWith.invoiceDate).toLocaleDateString()}</span></span>
+                                        <span>Date: <span className="text-foreground font-medium">{mounted ? new Date(dup.matchedWith.invoiceDate).toLocaleDateString() : '---'}</span></span>
                                       </div>
                                     </div>
                                     <div className="text-right flex flex-col items-end gap-1">

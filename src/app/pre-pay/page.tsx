@@ -215,7 +215,7 @@ export default function PrePayCockpit() {
                   <HoverCard>
                     <HoverCardTrigger asChild>
                       <Button variant="link" className="p-0 h-auto font-semibold text-foreground underline-offset-4 decoration-dashed decoration-muted-foreground/50">
-                        {c.primaryInvoice.vendorName}
+                        {c.primaryInvoice?.vendorName || 'Unknown Vendor'}
                       </Button>
                     </HoverCardTrigger>
                     <HoverCardContent className="w-80">
@@ -223,9 +223,9 @@ export default function PrePayCockpit() {
                         <div className="space-y-1">
                           <h4 className="text-sm font-semibold flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-primary" />
-                            {c.primaryInvoice.vendorName}
+                            {c.primaryInvoice?.vendorName || 'Unknown Vendor'}
                           </h4>
-                          <p className="text-xs text-muted-foreground">Vendor ID: {c.primaryInvoice.vendorId}</p>
+                          <p className="text-xs text-muted-foreground">Vendor ID: {c.primaryInvoice?.vendorId || 'N/A'}</p>
                           <div className="flex items-center pt-2">
                             <Badge variant="outline" className="text-[10px] mr-1">Global Partner</Badge>
                             <Badge variant={c.riskScore > 80 ? "destructive" : "secondary"} className="text-[10px]">
@@ -251,9 +251,9 @@ export default function PrePayCockpit() {
                     </HoverCardContent>
                   </HoverCard>
                 </TableCell>
-                <TableCell className="font-mono text-xs">{c.primaryInvoice.invoiceNumber}</TableCell>
+                <TableCell className="font-mono text-xs">{c.primaryInvoice?.invoiceNumber || 'N/A'}</TableCell>
                 <TableCell className="font-mono text-xs font-bold">
-                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: c.primaryInvoice.currency }).format(c.primaryInvoice.amount)}
+                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: c.primaryInvoice?.currency || 'USD' }).format(c.primaryInvoice?.amount || 0)}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">

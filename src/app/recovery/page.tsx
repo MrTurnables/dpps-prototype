@@ -1,5 +1,7 @@
 'use client';
 
+import * as XLSX from 'xlsx';
+
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -10,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Download, Mail, Loader2, Send, History, AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -58,7 +60,14 @@ interface Activity {
 
 export default function Recovery() {
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState("excel");
+  const [mounted, setMounted] = useState(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Fetch recovery items from API
   const { data: recoveryItems = [], isLoading } = useQuery<RecoveryItem[]>({
@@ -94,23 +103,87 @@ export default function Recovery() {
   });
 
   const handleExport = () => {
+    setIsExportDialogOpen(true);
+  };
+
+  const executeExport = () => {
+    const fileName = `recovery_report_${new Date().toISOString().split('T')[0]}`;
     setIsExporting(true);
-    setTimeout(() => {
+
+    try {
+      switch (exportFormat) {
+        case "excel":
+          const worksheet = XLSX.utils.json_to_sheet(recoveryItems.map(item => ({
+            "Case ID": item.id,
+            "Vendor": item.vendor?.name || "N/A",
+            "Amount": item.amount,
+            "Detected Date": item.initiatedDate,
+            "Status": item.status,
+            "Aging": item.aging || calculateAging(item.initiatedDate)
+          })));
+
+          const workbook = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(workbook, worksheet, "Recovery Cases");
+          XLSX.writeFile(workbook, `${fileName}.xlsx`);
+          toast.success("Recovery report exported successfully (Excel)");
+          break;
+
+        case "json":
+          const jsonContent = JSON.stringify(recoveryItems, null, 2);
+          downloadBlob(jsonContent, "application/json", "json", fileName);
+          break;
+
+        case "xml":
+          const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<RecoveryReport>
+  <Summary>
+    <TotalCases>${recoveryItems.length}</TotalCases>
+    <TotalAmount>${recoveryItems.reduce((sum, item) => sum + Number(item.amount), 0)}</TotalAmount>
+  </Summary>
+  <Cases>
+    ${recoveryItems.map(item => `
+    <Case>
+      <ID>${item.id}</ID>
+      <Vendor>${item.vendor?.name || "N/A"}</Vendor>
+      <Amount>${item.amount}</Amount>
+      <Date>${item.initiatedDate}</Date>
+      <Status>${item.status}</Status>
+      <Aging>${item.aging || calculateAging(item.initiatedDate)}</Aging>
+    </Case>`).join('')}
+  </Cases>
+</RecoveryReport>`;
+          downloadBlob(xmlContent, "application/xml", "xml", fileName);
+          break;
+
+        case "csv":
+        default:
+          const headers = "Case ID,Vendor,Amount,Detected Date,Status,Aging\n";
+          const rows = recoveryItems.map((item) => {
+            const field = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
+            return `${field(item.id)},${field(item.vendor?.name)},${item.amount},${field(mounted ? new Date(item.initiatedDate).toLocaleDateString() : item.initiatedDate)},${field(item.status)},${field(item.aging)}`;
+          }).join("\n");
+          downloadBlob("\uFEFF" + headers + rows, "text/csv;charset=utf-8;", "csv", fileName);
+          break;
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Export failed");
+    } finally {
       setIsExporting(false);
-      const headers = "Case ID,Vendor,Amount,Detected Date,Status,Aging\n";
-      const rows = recoveryItems.map((item) =>
-        `${item.id},${item.vendor?.name || "N/A"},${item.amount},${new Date(item.initiatedDate).toLocaleDateString()},${item.status},${item.aging || "N/A"}`
-      ).join("\n");
-      const csvContent = "data:text/csv;charset=utf-8," + headers + rows;
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `recovery_report_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Recovery report exported successfully");
-    }, 1500);
+      setIsExportDialogOpen(false);
+    }
+  };
+
+  const downloadBlob = (content: string, mimeType: string, extension: string, fileName: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${fileName}.${extension}`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success(`Recovery report exported successfully (${extension.toUpperCase()})`);
   };
 
   const calculateAging = (dateString: string) => {
@@ -185,7 +258,7 @@ export default function Recovery() {
                 <TableCell className="font-mono font-bold">
                   {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(item.amount))}
                 </TableCell>
-                <TableCell>{new Date(item.initiatedDate).toLocaleDateString()}</TableCell>
+                <TableCell>{mounted ? new Date(item.initiatedDate).toLocaleDateString() : '---'}</TableCell>
                 <TableCell>
                   <Select
                     defaultValue={item.status}
@@ -244,6 +317,36 @@ export default function Recovery() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Export Recovery Report</DialogTitle>
+            <DialogDescription>
+              Choose your preferred file format for the recovery items.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-2 py-4">
+            <Select value={exportFormat} onValueChange={setExportFormat}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select format" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="excel">Excel (.xlsx)</SelectItem>
+                <SelectItem value="csv">Comma Separated (.csv)</SelectItem>
+                <SelectItem value="xml">XML (.xml)</SelectItem>
+                <SelectItem value="json">JSON (.json)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="sm:justify-start">
+            <Button type="button" onClick={executeExport} className="w-full font-bold">
+              {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Generate & Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

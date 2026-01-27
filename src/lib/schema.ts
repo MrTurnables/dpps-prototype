@@ -110,10 +110,10 @@ export type Invoice = typeof invoices.$inferSelect;
 // Recovery Items table
 export const recoveryItems = pgTable("recovery_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id),
+  invoiceId: varchar("invoice_id").references(() => invoices.id),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   status: text("status").notNull().default("initiated"),
-  vendorId: varchar("vendor_id").notNull().references(() => vendors.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id),
   assignedAnalyst: varchar("assigned_analyst").references(() => users.id),
   recoveryMethod: text("recovery_method").notNull(),
   notes: text("notes"),
