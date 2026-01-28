@@ -1,6 +1,5 @@
 'use client';
 
-import { mockCases } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,12 +41,18 @@ export default function PrePayCockpit() {
   const [filterType, setFilterType] = useState<string>("All");
 
   // Fetch cases from API
-  const { data: casesData, isLoading } = useQuery({
-    queryKey: ["/api/cases", { status: "open" }],
+  const { data: casesData, isLoading, refetch } = useQuery({
+    queryKey: ["cases", filterType],
+    queryFn: async () => {
+      const res = await fetch(`/api/cases?status=${filterType.toLowerCase()}`);
+      if (!res.ok) throw new Error("Failed to fetch cases");
+      return res.json();
+    }
   });
 
   interface Case {
     id: string;
+    caseNumber: string;
     primaryInvoice: {
       vendorName: string;
       vendorId: string;
@@ -59,7 +64,7 @@ export default function PrePayCockpit() {
     status: string;
   }
 
-  const cases = (Array.isArray(casesData) ? casesData : mockCases) as Case[];
+  const cases = (Array.isArray(casesData) ? casesData : []) as Case[];
 
   const duplicateTypes = [
     { label: "Exact Match", count: 12, color: "bg-blue-500" },

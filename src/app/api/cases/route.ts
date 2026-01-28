@@ -1,37 +1,49 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { storage } from '@/lib/storage';
-import { insertCaseSchema } from '@/lib/schema';
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { invoices, vendors } from '@/lib/schema';
+import { eq, desc, and } from 'drizzle-orm';
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
 
-        const casesData = status
-            ? await storage.getCasesByStatus(status)
-            : await storage.getAllCases();
+        // Query DB for potential duplicates
+        // In a real scenario, "cases" might be a separate table, but here we treat duplicate invoices as cases.
+        const results = await db
+            .select({
+                invoice: invoices,
+                vendor: vendors,
+            })
+            .from(invoices)
+            .leftJoin(vendors, eq(invoices.vendorId, vendors.id))
+            .where(and(eq(invoices.isDuplicate, true)))
+            .orderBy(desc(invoices.createdAt));
 
-        return NextResponse.json(casesData);
-    } catch (error) {
-        console.error('Error fetching cases:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch cases' },
-            { status: 500 }
-        );
-    }
-}
+        // Transform DB results to Case shape Expected by Frontend
+        const cases = results.map(({ invoice, vendor }) => ({
+            id: invoice.id,
+            caseNumber: `CASE-${invoice.invoiceNumber}`, // distinct ID for UI
+            primaryInvoice: {
+                vendorName: vendor?.name || 'Unknown Vendor',
+                vendorId: invoice.vendorId,
+                invoiceNumber: invoice.invoiceNumber,
+                currency: 'USD', // Default for now
+                amount: Number(invoice.amount),
+                invoiceDate: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().split('T')[0] : '',
+                sourceSystem: 'Oracle',
+            },
+            riskScore: invoice.similarityScore || 0,
+            status: invoice.status === 'held' ? 'Open' : (invoice.status === 'paid' ? 'Closed' : invoice.status),
+            auditTrail: [
+                { action: 'Case Created', date: invoice.createdAt ? new Date(invoice.createdAt).toISOString().split('T')[0] : '', user: 'System' }
+            ],
+            candidates: [] // Populating candidates would require a more complex query joining matched invoice
+        }));
 
-export async function POST(request: NextRequest) {
-    try {
-        const body = await request.json();
-        const validatedData = insertCaseSchema.parse(body);
-        const newCase = await storage.createCase(validatedData);
-        return NextResponse.json(newCase, { status: 201 });
+        return NextResponse.json(cases);
     } catch (error) {
-        console.error('Error creating case:', error);
-        return NextResponse.json(
-            { error: 'Invalid case data' },
-            { status: 400 }
-        );
+        console.error('Failed to fetch cases:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

@@ -13,31 +13,39 @@ import {
   Pie,
   Cell
 } from "recharts";
-import { ShieldCheck, ShieldAlert, TrendingUp, DollarSign } from "lucide-react";
+import { ShieldCheck, ShieldAlert, TrendingUp, DollarSign, RefreshCw } from "lucide-react";
 import {
   TooltipProvider,
   TooltipTrigger,
   TooltipContent,
   Tooltip,
 } from "@/components/ui/tooltip";
-
-const monthlyData = [
-  { name: "Jan", prevented: 45000, detected: 5000 },
-  { name: "Feb", prevented: 52000, detected: 4800 },
-  { name: "Mar", prevented: 48000, detected: 6100 },
-  { name: "Apr", prevented: 61000, detected: 3200 },
-  { name: "May", prevented: 55000, detected: 4500 },
-  { name: "Jun", prevented: 67000, detected: 2800 },
-];
-
-const categoryData = [
-  { name: "Exact Match", value: 45, color: "#3498db" },
-  { name: "Fuzzy Match", value: 30, color: "#f39c12" },
-  { name: "OCR Error", value: 15, color: "#e74c3c" },
-  { name: "Pattern Match", value: 10, color: "#9b59b6" },
-];
+import { useQuery } from "@tanstack/react-query";
 
 export default function Reports() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['reports'],
+    queryFn: async () => {
+      const res = await fetch('/api/reports');
+      if (!res.ok) throw new Error("Failed to fetch reports");
+      return res.json();
+    }
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[50vh]">
+        <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const { kpi, monthlyData, categoryData } = data || {
+    kpi: { prevented: 0, successRate: 0, confidenceAvg: 0, detectedRisks: 0 },
+    monthlyData: [],
+    categoryData: []
+  };
+
   return (
 
     <div className="space-y-8">
@@ -50,10 +58,14 @@ export default function Reports() {
 
       <div className="grid md:grid-cols-4 gap-4">
         {[
-          { label: "Total Prevented", value: "$1.25M", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50", tooltip: "Direct financial loss avoided by blocking duplicate payments before release." },
-          { label: "Success Rate", value: "98.2%", icon: ShieldCheck, color: "text-blue-600", bg: "bg-blue-50", tooltip: "Percentage of total invoices correctly processed without error or duplicate release." },
-          { label: "Confidence Avg", value: "94.5%", icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50", tooltip: "AI-calculated average confidence level across all detected duplicate groups." },
-          { label: "Detected Risks", value: "142", icon: ShieldAlert, color: "text-amber-600", bg: "bg-amber-50", tooltip: "Total number of suspicious patterns flagged by the ML engine for review." },
+          {
+            label: "Total Prevented",
+            value: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(kpi.prevented),
+            icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50", tooltip: "Direct financial loss avoided by blocking duplicate payments before release."
+          },
+          { label: "Success Rate", value: `${kpi.successRate}%`, icon: ShieldCheck, color: "text-blue-600", bg: "bg-blue-50", tooltip: "Percentage of total invoices correctly processed without error or duplicate release." },
+          { label: "Confidence Avg", value: `${kpi.confidenceAvg}%`, icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50", tooltip: "AI-calculated average confidence level across all detected duplicate groups." },
+          { label: "Detected Risks", value: kpi.detectedRisks, icon: ShieldAlert, color: "text-amber-600", bg: "bg-amber-50", tooltip: "Total number of suspicious patterns flagged by the ML engine for review." },
         ].map((stat, i) => (
           <TooltipProvider key={i}>
             <Tooltip>
@@ -138,7 +150,7 @@ export default function Reports() {
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    {categoryData.map((entry, index) => (
+                    {categoryData?.map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -147,7 +159,7 @@ export default function Reports() {
               </ResponsiveContainer>
             </div>
             <div className="space-y-3">
-              {categoryData.map((cat) => (
+              {categoryData?.map((cat: any) => (
                 <div key={cat.name} className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />
                   <span className="text-xs font-bold whitespace-nowrap">{cat.name}</span>

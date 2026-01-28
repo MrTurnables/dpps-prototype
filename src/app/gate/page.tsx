@@ -36,6 +36,12 @@ interface ValidationResult {
   reviewLines: number;
   duplicatesDetected: number;
   duplicates: DetectedDuplicate[];
+  approvedForPayment?: {
+    invoiceNumber: string;
+    vendorId: string;
+    amount: number;
+    invoiceDate: string;
+  }[];
 }
 
 interface DetectedDuplicate {
@@ -80,6 +86,7 @@ export default function PaymentGate() {
   const [fileName, setFileName] = useState<string | null>(null);
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [isApprovedDialogOpen, setIsApprovedDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState("excel");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
@@ -336,6 +343,65 @@ export default function PaymentGate() {
     });
   };
 
+  const executeApprovedExport = () => {
+    if (!validationResult?.approvedForPayment) return;
+
+    const fileName = `approved_invoices_${new Date().toISOString().split('T')[0]}`;
+    const approvedItems = validationResult.approvedForPayment;
+
+    switch (exportFormat) {
+      case "excel":
+        const worksheet = XLSX.utils.json_to_sheet(approvedItems.map(item => ({
+          "Invoice Number": item.invoiceNumber,
+          "Vendor ID": item.vendorId,
+          "Amount": item.amount,
+          "Date": item.invoiceDate,
+        })));
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Approved Invoices");
+        XLSX.writeFile(workbook, `${fileName}.xlsx`);
+        toast.success("Export Successful", { description: "Approved invoices downloaded as EXCEL" });
+        break;
+
+      case "json":
+        downloadBlob(JSON.stringify(approvedItems, null, 2), "application/json", "json", fileName);
+        break;
+
+      case "xml":
+      case "ubl":
+        const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<ApprovedInvoices>
+  <Summary>
+    <TotalLines>${approvedItems.length}</TotalLines>
+    <TotalAmount>${approvedItems.reduce((sum, item) => sum + Number(item.amount), 0)}</TotalAmount>
+  </Summary>
+  <Invoices>
+    ${approvedItems.map(item => `
+    <Invoice>
+      <InvoiceNumber>${item.invoiceNumber}</InvoiceNumber>
+      <VendorID>${item.vendorId}</VendorID>
+      <Amount>${item.amount}</Amount>
+      <Date>${item.invoiceDate}</Date>
+    </Invoice>`).join('')}
+  </Invoices>
+</ApprovedInvoices>`;
+        downloadBlob(xmlContent, "application/xml", "xml", fileName);
+        break;
+
+      case "csv":
+      default:
+        const headers = "Invoice Number,Vendor ID,Amount,Date\n";
+        const rows = approvedItems.map(item => {
+          const field = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
+          return `${field(item.invoiceNumber)},${field(item.vendorId)},${item.amount},${field(item.invoiceDate)}`;
+        }).join("\n");
+        downloadBlob("\uFEFF" + headers + rows, "text/csv;charset=utf-8;", "csv", fileName);
+        break;
+    }
+    setIsApprovedDialogOpen(false);
+  };
+
   const handleBlockFlagged = () => {
     setIsBlocking(true);
     setTimeout(() => {
@@ -399,7 +465,41 @@ export default function PaymentGate() {
 
   const handleDismissWarning = (uniqueKey: string) => {
     setProcessingId(`dismiss-${uniqueKey}`);
+
+    // Simulate API call or just local update? Local update is instant and good for UX here.
     setTimeout(() => {
+      setValidationResult(prev => {
+        if (!prev) return null;
+
+        const dupIndex = prev.duplicates.findIndex((d, idx) => `${d.invoiceNumber}-${idx}` === uniqueKey);
+        if (dupIndex === -1) return prev;
+
+        const item = prev.duplicates[dupIndex];
+
+        // Remove from duplicates
+        const newDuplicates = [...prev.duplicates];
+        newDuplicates.splice(dupIndex, 1);
+
+        // Add to approved (needs matching shape)
+        const newApproved = [
+          ...(prev.approvedForPayment || []),
+          {
+            invoiceNumber: item.invoiceNumber,
+            vendorId: item.vendorId,
+            amount: item.amount,
+            invoiceDate: item.invoiceDate,
+          }
+        ];
+
+        return {
+          ...prev,
+          duplicates: newDuplicates,
+          duplicatesDetected: prev.duplicatesDetected - 1,
+          approvedLines: prev.approvedLines + 1,
+          approvedForPayment: newApproved
+        };
+      });
+
       toast.info("Warning Dismissed", { description: "Item approved for release" });
       setProcessingId(null);
     }, 500);
@@ -552,7 +652,10 @@ export default function PaymentGate() {
                 className="space-y-6"
               >
                 <div className="grid sm:grid-cols-3 gap-4">
-                  <Card className="border-emerald-100 bg-emerald-50/30">
+                  <Card
+                    className="border-emerald-100 bg-emerald-50/30 cursor-pointer hover:bg-emerald-100/50 transition-colors"
+                    onClick={() => setIsApprovedDialogOpen(true)}
+                  >
                     <CardContent className="pt-6 flex items-center gap-4">
                       <div className="h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
                         <CheckCircle className="h-6 w-6" />
@@ -560,6 +663,7 @@ export default function PaymentGate() {
                       <div>
                         <p className="text-2xl font-black text-emerald-700">{validationResult?.approvedLines}</p>
                         <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Lines Approved</p>
+                        <p className="text-[10px] text-emerald-600/70 mt-1 font-medium">Click to view details</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -755,6 +859,59 @@ export default function PaymentGate() {
                         Generate & Download
                       </Button>
                     </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={isApprovedDialogOpen} onOpenChange={setIsApprovedDialogOpen}>
+                  <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col">
+                    <DialogHeader>
+                      <DialogTitle>Approved Invoices ({validationResult?.approvedLines})</DialogTitle>
+                      <DialogDescription>
+                        These invoices have passed all duplicate checks and are ready for payment.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="flex-1 overflow-auto min-h-[200px] border rounded-md my-4">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="p-3 font-bold">Invoice #</th>
+                            <th className="p-3 font-bold">Vendor ID</th>
+                            <th className="p-3 font-bold text-right">Amount</th>
+                            <th className="p-3 font-bold">Date</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {validationResult?.approvedForPayment?.map((item, i) => (
+                            <tr key={i} className="hover:bg-muted/5">
+                              <td className="p-3 font-medium">{item.invoiceNumber}</td>
+                              <td className="p-3">{item.vendorId}</td>
+                              <td className="p-3 text-right font-mono">${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td className="p-3">{item.invoiceDate}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex items-center gap-4 border-t pt-4">
+                      <div className="flex-1">
+                        <Select value={exportFormat} onValueChange={setExportFormat}>
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Select format" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="excel">Excel (.xlsx)</SelectItem>
+                            <SelectItem value="csv">Comma Separated (.csv)</SelectItem>
+                            <SelectItem value="xml">XML (.xml)</SelectItem>
+                            <SelectItem value="json">JSON (.json)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button onClick={executeApprovedExport} className="font-bold">
+                        <Download className="mr-2 h-4 w-4" /> Export Approved List
+                      </Button>
+                    </div>
                   </DialogContent>
                 </Dialog>
               </motion.div>

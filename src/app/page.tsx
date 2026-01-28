@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { mockVendorRanking } from "@/lib/mock-data";
 import { ShieldCheck, AlertTriangle, Activity, Loader2, Calendar as CalendarIcon } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip } from "recharts";
 import { Badge } from "@/components/ui/badge";
@@ -71,31 +70,32 @@ export default function Dashboard() {
     setSelectedRange(prev => ({ ...prev, [key]: value }));
   };
 
-  // Fetch dashboard metrics from API
-  const { data: metricsData, isLoading: isLoadingMetrics } = useQuery({
-    queryKey: ["/api/dashboard/metrics"],
-    refetchInterval: 30000,
+  // Fetch dashboard metrics from API (re-using reports API for consistency)
+  const { data: reportsData, isLoading: isLoadingMetrics } = useQuery({
+    queryKey: ["reports"],
+    queryFn: async () => {
+      const res = await fetch('/api/reports');
+      return res.json();
+    }
   });
 
   // Fetch vendors for ranking
   const { data: vendorsData } = useQuery({
-    queryKey: ["/api/vendors"],
+    queryKey: ["vendors"],
+    queryFn: async () => {
+      const res = await fetch('/api/vendors');
+      return res.json();
+    }
   });
 
-  interface Metrics {
-    totalSavings?: number;
-    activeCases?: number;
-    duplicatesDetected?: number;
-  }
-
-  const mData = metricsData as Metrics | undefined;
+  const kpi = reportsData?.kpi;
 
   const metrics = {
-    preventedValue: mData?.totalSavings || 0,
-    openCases: mData?.activeCases || 0,
-    totalDetections: mData?.duplicatesDetected || 0,
-    efficiency: 85,
-    totalProcessed: 5250000
+    preventedValue: kpi?.prevented || 0,
+    openCases: kpi?.detectedRisks || 0, // Using detectedRisks as proxy for open cases
+    totalDetections: kpi?.detectedRisks || 0,
+    efficiency: kpi?.successRate || 0,
+    totalProcessed: 5250000 // Still hardcoded or fetch from another agg
   };
 
   const isLoading = isLoadingMetrics;
@@ -118,8 +118,6 @@ export default function Dashboard() {
     const data = Array.from({ length: 48 }, () => Math.random());
     setHeatmapData(data);
   }, []);
-
-
 
   return (
     <div className="space-y-8">
@@ -370,7 +368,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {(Array.isArray(vendorsData) ? vendorsData : mockVendorRanking).slice(0, 10).map((vendor, i) => (
+              {(Array.isArray(vendorsData) ? vendorsData : []).slice(0, 10).map((vendor: any, i: number) => (
                 <div key={vendor.name || vendor.id} className="flex items-center justify-between">
                   <div className="flex items-center space-x-3 overflow-hidden">
                     <span className="text-xs font-mono text-muted-foreground w-4">{i + 1}</span>
