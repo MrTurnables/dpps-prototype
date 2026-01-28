@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,11 +26,24 @@ import {
 } from "@/components/ui/table";
 
 export default function AccessManagement() {
-  const users = [
-    { name: "Jane Doe", email: "jane.doe@enterprise.com", role: "Administrator", status: "Active", method: "SSO (Okta)" },
-    { name: "John Smith", email: "john.smith@enterprise.com", role: "AP Manager", status: "Active", method: "SSO (Okta)" },
-    { name: "Robert Wilson", email: "robert.wilson@enterprise.com", role: "Auditor", status: "Inactive", method: "SSO (Okta)" },
-  ];
+  /* import { useQuery } from "@tanstack/react-query"; */ // Added top level import in full file replacement if needed, 
+  // but here I need to be careful with imports. I'll invoke useQuery here.
+  const { data: dbUsers, isLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const res = await fetch('/api/users');
+      if (!res.ok) throw new Error("Failed to search users");
+      return res.json();
+    }
+  });
+
+  const users = dbUsers?.map((u: any) => ({
+    name: u.fullName || u.username,
+    email: u.email || `${u.username}@enterprise.com`,
+    role: u.role || 'Viewer',
+    status: u.status || 'Active',
+    method: u.authMethod || 'Email'
+  })) || [];
 
   const [roles] = React.useState([
     { id: "admin", name: "Administrator", permissions: "Full system access", color: "bg-purple-500" },
@@ -139,7 +153,7 @@ export default function AccessManagement() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((user) => (
+              {users.map((user: any) => (
                 <TableRow key={user.email}>
                   <TableCell>
                     <div className="flex flex-col">

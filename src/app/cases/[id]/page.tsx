@@ -1,17 +1,100 @@
 'use client';
 
 import { use } from "react";
-import { mockCases } from "@/lib/mock-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, X, AlertTriangle, ArrowLeft, FileText, History } from "lucide-react";
+import { Check, X, AlertTriangle, ArrowLeft, FileText, History, RefreshCw } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-export default function CaseDetail({ params }: { params: Promise<{ id: string }> }) {
+interface CaseDetailProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function CaseDetail({ params }: CaseDetailProps) {
   const { id } = use(params);
-  const caseItem = mockCases.find((c) => c.id === id) || mockCases[0];
-  const candidate = caseItem.candidates[0];
+  const router = useRouter();
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Fetch Real Data
+  const { data: caseItem, isLoading, error, refetch } = useQuery({
+    queryKey: ['case', id],
+    queryFn: async () => {
+      const res = await fetch(`/api/cases/${id}`);
+      if (!res.ok) {
+        if (res.status === 404) throw new Error("Case not found");
+        throw new Error("Failed to fetch case details");
+      }
+      return res.json();
+    }
+  });
+
+  const queryClient = useQueryClient();
+
+  // Placeholder for candidate while we implement candidates API
+  // In real implementation, this should come from caseItem.candidates[0]
+  const candidate = {
+    invoice: {
+      vendorName: caseItem?.primaryInvoice?.vendorName || "Unknown",
+      invoiceNumber: "INV-PAID-001", // Placeholder
+      amount: caseItem?.primaryInvoice?.amount || 0,
+      currency: "USD",
+      invoiceDate: "2023-01-01",
+      sourceSystem: "Oracle"
+    },
+    reasons: ["Fuzzy Match", "Amount Similarity"],
+    score: caseItem?.riskScore || 0
+  };
+
+  const handleAction = async (action: 'confirm' | 'release') => {
+    setIsProcessing(true);
+    const actionText = action === 'confirm' ? 'Confirming Duplicate' : 'Releasing Payment';
+
+    try {
+      const res = await fetch(`/api/cases/${id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+
+      if (!res.ok) throw new Error("Action failed");
+
+      const result = await res.json();
+
+      toast.success(action === 'confirm' ? "Case confirmed as duplicate" : "Payment released successfully");
+      await queryClient.invalidateQueries({ queryKey: ['cases'] }); // Refresh list view
+      await refetch(); // Refresh current detail
+    } catch (error) {
+      toast.error(`Failed to ${action} case`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error || !caseItem) {
+    return (
+      <div className="flex h-[50vh] flex-col items-center justify-center gap-4">
+        <AlertTriangle className="h-12 w-12 text-destructive" />
+        <h2 className="text-xl font-bold">Case Not Found</h2>
+        <p className="text-muted-foreground">Unable to load case details for ID: {id}</p>
+        <Link href="/pre-pay">
+          <Button variant="outline">Back to list</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -22,7 +105,7 @@ export default function CaseDetail({ params }: { params: Promise<{ id: string }>
         </Link>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-bold font-heading text-foreground">{caseItem.id}</h1>
+            <h1 className="text-3xl font-bold font-heading text-foreground">{caseItem.caseNumber}</h1>
             <Badge variant={caseItem.status === "New" ? "destructive" : "secondary"} className="text-base px-3 py-1">
               {caseItem.status}
             </Badge>
@@ -31,10 +114,20 @@ export default function CaseDetail({ params }: { params: Promise<{ id: string }>
             </Badge>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="border-destructive text-destructive hover:bg-destructive/10">
+            <Button
+              variant="outline"
+              className="border-destructive text-destructive hover:bg-destructive/10"
+              onClick={() => handleAction('confirm')}
+              disabled={isProcessing}
+            >
               <Check className="mr-2 h-4 w-4" /> Confirm Duplicate
             </Button>
-            <Button variant="default" className="bg-emerald-600 hover:bg-emerald-700">
+            <Button
+              variant="default"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => handleAction('release')}
+              disabled={isProcessing}
+            >
               <X className="mr-2 h-4 w-4" /> Release Payment
             </Button>
           </div>
@@ -145,7 +238,7 @@ export default function CaseDetail({ params }: { params: Promise<{ id: string }>
             </CardHeader>
             <CardContent>
               <div className="relative border-l border-muted ml-2 space-y-6">
-                {caseItem.auditTrail.map((event, i) => (
+                {caseItem.auditTrail?.map((event: any, i: number) => (
                   <div key={i} className="pl-6 relative">
                     <div className="absolute -left-1.5 top-1.5 h-3 w-3 rounded-full bg-muted-foreground" />
                     <p className="text-sm font-medium">{event.action}</p>

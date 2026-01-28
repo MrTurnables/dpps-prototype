@@ -1,0 +1,69 @@
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { invoices, recoveryItems } from '@/lib/schema';
+import { sql } from 'drizzle-orm';
+
+export async function GET() {
+    try {
+        // 1. Calculate KPIs
+        // Total Prevented: Sum of amounts of 'held' invoices. 
+        // Note: details depend on specific driver response shape. 
+        // For safest Drizzle usage, we can use query builder for simple aggs or cast the result.
+        const preventedResult: any = await db.execute(sql`
+      SELECT SUM(amount) as total FROM invoices WHERE status = 'held' OR is_duplicate = true
+    `);
+        const totalPrevented = Number(preventedResult.rows?.[0]?.total || preventedResult[0]?.total || 0);
+
+        // Total Detected
+        const detectedResult: any = await db.execute(sql`
+      SELECT COUNT(*) as count FROM invoices WHERE is_duplicate = true
+    `);
+        const totalDetectedCount = Number(detectedResult.rows?.[0]?.count || detectedResult[0]?.count || 0);
+
+        // Success Rate (Mock calculation)
+        const successRate = 98.2;
+
+        // 2. Monthly Data
+        const monthlyResult: any = await db.execute(sql`
+        SELECT 
+            TO_CHAR(created_at, 'Mon') as name,
+            SUM(CASE WHEN status = 'held' THEN amount ELSE 0 END) as prevented,
+            SUM(CASE WHEN is_duplicate = true THEN amount ELSE 0 END) as detected
+        FROM invoices
+        WHERE created_at > NOW() - INTERVAL '6 months'
+        GROUP BY TO_CHAR(created_at, 'Mon'), EXTRACT(MONTH FROM created_at)
+        ORDER BY EXTRACT(MONTH FROM created_at)
+    `);
+
+        const monthlyRows = monthlyResult.rows || monthlyResult;
+        const monthlyData = monthlyRows.length > 0 ? monthlyRows : [
+            { name: 'Jan', prevented: 0, detected: 0 }
+        ];
+
+        // 3. Category Data
+        // We don't have a 'category' column on invoices easily accessible without joining signals. 
+        // We can query signals array.
+        // For now, let's distribute based on simple logic or return static if DB is empty.
+        const categoryData = [
+            { name: "Exact Match", value: 45, color: "#3498db" },
+            { name: "Fuzzy Match", value: 30, color: "#f39c12" },
+            { name: "OCR Error", value: 15, color: "#e74c3c" },
+            { name: "Pattern Match", value: 10, color: "#9b59b6" },
+        ];
+
+        return NextResponse.json({
+            kpi: {
+                prevented: totalPrevented,
+                successRate,
+                confidenceAvg: 94.5, // Placeholder
+                detectedRisks: totalDetectedCount
+            },
+            monthlyData,
+            categoryData
+        });
+
+    } catch (error) {
+        console.error('Failed to fetch reports:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+}
